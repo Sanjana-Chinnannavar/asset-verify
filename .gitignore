@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Environment variables (CONTAINS PRIVATE KEYS - NEVER COMMIT)
+.env
+.env.local
+
+# Build outputs
+frontend/dist/
+
+# Hardhat
+backend/cache/
+backend/artifacts/
+backend/typechain-types/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
