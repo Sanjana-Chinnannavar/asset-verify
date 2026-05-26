@@ -1,95 +1,91 @@
-import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
-import { ethers } from 'ethers';
-import { Layers, ShieldCheck, Search } from 'lucide-react';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, useLocation, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { ShieldCheck, LogOut, LayoutDashboard, FilePlus } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import MintAsset from './components/MintAsset';
 import VerifyAsset from './components/VerifyAsset';
+import LoginPortal from './components/LoginPortal';
 
-import contractAddress from './contracts/contract-address.json';
-import AssetVerifierArtifact from './contracts/AssetVerifier.json';
+function AppContent() {
+  const { user, role, account, logout, loading } = useAuth();
+  const location = useLocation();
 
-function App() {
-  const [account, setAccount] = useState(null);
-  const [contract, setContract] = useState(null);
+  // Allow public access to the verify route without logging in
+  const isVerifyRoute = location.pathname.startsWith('/verify/');
 
-  useEffect(() => {
-    checkIfWalletIsConnected();
-  }, []);
+  if (loading) {
+    return (
+      <div className="system-loading">
+        <div className="spinner"></div>
+        <h2>Initializing Secure Cryptographic Node...</h2>
+        <p>Connecting to Polygon Ledger</p>
+      </div>
+    );
+  }
 
-  const checkIfWalletIsConnected = async () => {
-    try {
-      if (!window.ethereum) {
-        console.log("No metamask found");
-        return;
-      }
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      if (accounts.length > 0) {
-        setAccount(accounts[0]);
-        setupContract();
-      }
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const connectWallet = async () => {
-    try {
-      if (!window.ethereum) {
-        alert("Get MetaMask!");
-        return;
-      }
-      const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-      setAccount(accounts[0]);
-      setupContract();
-    } catch (error) {
-      console.error(error);
-    }
-  };
-
-  const setupContract = async () => {
-    if (window.ethereum) {
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
-      const verifierContract = new ethers.Contract(
-        contractAddress.AssetVerifier,
-        AssetVerifierArtifact.abi,
-        signer
-      );
-      setContract(verifierContract);
-    }
-  };
+  // If not logged in and not on the verify route, show the login portal
+  if (!user && !isVerifyRoute) {
+    return <LoginPortal />;
+  }
 
   return (
-    <Router>
-      <div className="container">
+    <div className="container">
+      {!isVerifyRoute && (
         <header className="header">
           <Link to="/" className="logo">
             <ShieldCheck size={32} />
-            AssetVerifier
+            AssetVerifier <span className="logo-badge">{role === 'admin' ? 'Admin Portal' : 'Buyer Hub'}</span>
           </Link>
           <nav className="nav-links">
-            <Link to="/">Dashboard</Link>
-            <Link to="/mint">Register Asset</Link>
+            <Link to="/" className="nav-item">
+              <LayoutDashboard size={18} /> Dashboard
+            </Link>
+            {role === 'admin' && (
+              <Link to="/mint" className="nav-item">
+                <FilePlus size={18} /> Register Asset
+              </Link>
+            )}
           </nav>
-          {account ? (
-            <div className="status-badge status-success">
-              {account.substring(0, 6)}...{account.substring(account.length - 4)}
+          
+          <div className="header-actions">
+            <div className="status-badge-container">
+              <span className={`role-tag ${role === 'admin' ? 'role-admin' : 'role-user'}`}>
+                {role === 'admin' ? 'SYSTEM ADMIN' : 'AUTHORIZED BUYER'}
+              </span>
+              {account && (
+                <div className="status-badge status-success">
+                  {account.substring(0, 6)}...{account.substring(account.length - 4)}
+                </div>
+              )}
             </div>
-          ) : (
-            <button className="btn" onClick={connectWallet}>
-              Connect Wallet
+            
+            <button className="btn btn-secondary btn-logout" onClick={logout} title="Sign Out">
+              <LogOut size={18} /> Logout
             </button>
-          )}
+          </div>
         </header>
+      )}
 
-        <Routes>
-          <Route path="/" element={<Dashboard account={account} contract={contract} />} />
-          <Route path="/mint" element={<MintAsset account={account} contract={contract} />} />
-          <Route path="/verify/:tokenId" element={<VerifyAsset />} />
-        </Routes>
-      </div>
-    </Router>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route 
+          path="/mint" 
+          element={role === 'admin' ? <MintAsset /> : <Navigate to="/" replace />} 
+        />
+        <Route path="/verify/:tokenId" element={<VerifyAsset />} />
+      </Routes>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
+      </Router>
+    </AuthProvider>
   );
 }
 

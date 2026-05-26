@@ -1,12 +1,15 @@
-import * as dotenv from "dotenv";
-dotenv.config();
-import "@nomicfoundation/hardhat-toolbox";
+require("dotenv").config();
+require("@nomicfoundation/hardhat-toolbox");
 
 /** @type import('hardhat/config').HardhatUserConfig */
-export default {
+module.exports = {
   solidity: {
     version: "0.8.24",
     settings: {
+      optimizer: {
+        enabled: true,
+        runs: 1
+      },
       evmVersion: "cancun"
     }
   },
@@ -15,7 +18,7 @@ export default {
       chainId: 1337
     },
     amoy: {
-      url: "https://polygon-amoy.drpc.org",
+      url: "https://rpc-amoy.polygon.technology",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY.startsWith("0x") ? process.env.PRIVATE_KEY : "0x" + process.env.PRIVATE_KEY] : [],
       gasPrice: 30000000000
     }

@@ -1,13 +1,110 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { ethers } from 'ethers';
+import { Watch, Home, Palette, Award, FileUp, Sparkles, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
 
-const MintAsset = ({ account, contract }) => {
+const MintAsset = () => {
+  const { account, contract } = useAuth();
+  const [step, setStep] = useState(1); // 1: Class, 2: Specs, 3: Image, 4: Summary/Mint
+  const [assetClass, setAssetClass] = useState(''); // 'luxury', 'realestate', 'fineart', 'digitalip'
+  
+  // Specification states
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [specs, setSpecs] = useState({});
+  
+  // Image states
+  const [imageFile, setImageFile] = useState(null);
+  const [imagePreview, setImagePreview] = useState('');
+  const [imageIpfsUrl, setImageIpfsUrl] = useState('');
+  
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
-  const [mintStatus, setMintStatus] = useState('');
+  const [statusMessage, setStatusMessage] = useState('');
+  
   const navigate = useNavigate();
+
+  // Pre-configured asset types
+  const assetClasses = [
+    {
+      id: 'luxury',
+      title: 'Luxury Goods',
+      desc: 'Tokenize high-end watches, designer handbags, or fine jewelry.',
+      icon: Watch,
+      color: '#f59e0b'
+    },
+    {
+      id: 'realestate',
+      title: 'Real Estate & Deeds',
+      desc: 'Tokenize land titles, property deeds, or apartment shares.',
+      icon: Home,
+      color: '#10b981'
+    },
+    {
+      id: 'fineart',
+      title: 'Fine Art & Collectibles',
+      desc: 'Tokenize physical paintings, sculptures, or rare museum pieces.',
+      icon: Palette,
+      color: '#8b5cf6'
+    },
+    {
+      id: 'digitalip',
+      title: 'Intellectual Property',
+      desc: 'Tokenize patents, software copyright, or trade secrets.',
+      icon: Award,
+      color: '#3b82f6'
+    }
+  ];
+
+  const handleClassSelect = (classId) => {
+    setAssetClass(classId);
+    setSpecs({}); // Reset specs
+    setStep(2);
+  };
+
+  const handleSpecChange = (key, value) => {
+    setSpecs(prev => ({ ...prev, [key]: value }));
+  };
+
+  // Upload raw image file to Pinata IPFS
+  const handleImageFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setImageFile(file);
+    setImagePreview(URL.createObjectURL(file));
+    
+    try {
+      setIsUploadingImage(true);
+      setStatusMessage('Uploading high-res asset image to IPFS...');
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_PINATA_JWT}`
+        },
+        body: formData
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to upload image file to Pinata IPFS');
+      }
+      
+      const resData = await res.json();
+      const ipfsUrl = `ipfs://${resData.IpfsHash}`;
+      setImageIpfsUrl(ipfsUrl);
+      setStatusMessage('Image successfully anchored on decentralized IPFS!');
+    } catch (error) {
+      console.error(error);
+      setStatusMessage(`Error: ${error.message}`);
+    } finally {
+      setIsUploadingImage(false);
+    }
+  };
 
   const handleMint = async (e) => {
     e.preventDefault();
@@ -18,15 +115,20 @@ const MintAsset = ({ account, contract }) => {
 
     try {
       setIsMinting(true);
-      setMintStatus('Uploading to IPFS via Pinata...');
+      setStatusMessage('Pinning structured asset metadata to IPFS...');
+
+      // Combine general attributes with asset-class specific specs
       const metadata = {
         name,
         description,
+        assetClass,
+        specifications: specs,
+        image: imageIpfsUrl || 'ipfs://QmUNLLsP2GmCwFMzUbz4QUtC8m8HgaCbfM7Qf7k1a32qXG', // fallback image CID
         timestamp: new Date().toISOString(),
         issuer: account
       };
 
-      // Upload to real IPFS via Pinata
+      // Upload metadata JSON to Pinata
       const res = await fetch('https://api.pinata.cloud/pinning/pinJSONToIPFS', {
         method: 'POST',
         headers: {
@@ -36,82 +138,395 @@ const MintAsset = ({ account, contract }) => {
         body: JSON.stringify({
           pinataContent: metadata,
           pinataMetadata: {
-            name: `AssetVerifier-${name}`
+            name: `AssetVerifier-${assetClass}-${name}`
           }
         })
       });
 
       if (!res.ok) {
-        throw new Error('Failed to upload to IPFS via Pinata');
+        throw new Error('Failed to upload metadata to IPFS via Pinata');
       }
 
       const resData = await res.json();
       const tokenURI = `ipfs://${resData.IpfsHash}`;
 
+      setStatusMessage('Confirming smart contract registration on Polygon Ledger...');
       
-      setMintStatus('Confirm Transaction in MetaMask...');
+      // Call registerAsset (Restricted to contract owner/admin)
+      const tx = await contract.registerAsset(account, tokenURI);
       
-      // Force a lower gas limit and price to ensure it fits in their remaining 0.032 POL budget
-      const tx = await contract.registerAsset(account, tokenURI, {
-        gasLimit: 300000,
-        maxFeePerGas: ethers.parseUnits("35", "gwei"),
-        maxPriorityFeePerGas: ethers.parseUnits("35", "gwei")
-      });
-      
-      setMintStatus('Minting... Waiting for confirmation...');
+      setStatusMessage('Registering asset on-chain... Waiting for block confirmation...');
       await tx.wait();
       
-      setMintStatus('Asset successfully registered!');
+      setStatusMessage('Success! Asset tokenized and verified on the blockchain!');
       setTimeout(() => navigate('/'), 2000);
       
     } catch (error) {
       console.error(error);
-      setMintStatus(`Error: ${error.message.substring(0, 50)}...`);
+      setStatusMessage(`Error: ${error.message.substring(0, 80)}...`);
     } finally {
       setIsMinting(false);
     }
   };
 
-  return (
-    <div className="card" style={{ maxWidth: '600px', margin: '0 auto' }}>
-      <h2>Register New Asset</h2>
-      <p style={{ marginBottom: '2rem' }}>Tokenize your physical or digital asset on the blockchain.</p>
-      
-      <form onSubmit={handleMint}>
-        <div className="form-group">
-          <label className="form-label">Asset Name</label>
-          <input 
-            type="text" 
-            className="form-input" 
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            required
-            placeholder="e.g. Rolex Submariner #12345"
-          />
-        </div>
-        
-        <div className="form-group">
-          <label className="form-label">Asset Description</label>
-          <textarea 
-            className="form-input" 
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            required
-            placeholder="Detailed description of the asset..."
-            rows="4"
-          />
-        </div>
+  // Render spec form inputs dynamically based on class selected
+  const renderSpecFields = () => {
+    switch (assetClass) {
+      case 'luxury':
+        return (
+          <>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Brand / Manufacturer</label>
+                <input type="text" className="form-input" placeholder="e.g. Rolex, Patek Philippe" onChange={(e) => handleSpecChange('brand', e.target.value)} value={specs.brand || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Model Name / Number</label>
+                <input type="text" className="form-input" placeholder="e.g. Daytona 116500LN" onChange={(e) => handleSpecChange('model', e.target.value)} value={specs.model || ''} required />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Unique Serial Number</label>
+                <input type="text" className="form-input" placeholder="e.g. RX88219A9" onChange={(e) => handleSpecChange('serial', e.target.value)} value={specs.serial || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Year of Manufacture</label>
+                <input type="number" className="form-input" placeholder="e.g. 2024" onChange={(e) => handleSpecChange('year', e.target.value)} value={specs.year || ''} required />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Case/Frame Material</label>
+                <input type="text" className="form-input" placeholder="e.g. Oystersteel, 18k Rose Gold" onChange={(e) => handleSpecChange('material', e.target.value)} value={specs.material || ''} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Condition Grade</label>
+                <select className="form-input" onChange={(e) => handleSpecChange('condition', e.target.value)} value={specs.condition || 'New'}>
+                  <option value="New">New / Unworn</option>
+                  <option value="Excellent">Excellent / Mint</option>
+                  <option value="Very Good">Very Good</option>
+                  <option value="Good">Good / Signs of Wear</option>
+                </select>
+              </div>
+            </div>
+          </>
+        );
+      case 'realestate':
+        return (
+          <>
+            <div className="form-group">
+              <label className="form-label">Property Absolute Address</label>
+              <input type="text" className="form-input" placeholder="e.g. 742 Evergreen Terrace, Springfield" onChange={(e) => handleSpecChange('address', e.target.value)} value={specs.address || ''} required />
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Property registry / Deed ID</label>
+                <input type="text" className="form-input" placeholder="e.g. DEED-9921-A8" onChange={(e) => handleSpecChange('deedId', e.target.value)} value={specs.deedId || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Square Footage / Area</label>
+                <input type="text" className="form-input" placeholder="e.g. 2,400 sq ft" onChange={(e) => handleSpecChange('area', e.target.value)} value={specs.area || ''} required />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Property Type</label>
+                <select className="form-input" onChange={(e) => handleSpecChange('propertyType', e.target.value)} value={specs.propertyType || 'Residential'}>
+                  <option value="Residential">Residential (House/Apartment)</option>
+                  <option value="Commercial">Commercial (Office/Shop)</option>
+                  <option value="Industrial">Industrial (Warehouse)</option>
+                  <option value="Land">Vacant Land Plot</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Year of Construction</label>
+                <input type="number" className="form-input" placeholder="e.g. 1998" onChange={(e) => handleSpecChange('yearBuilt', e.target.value)} value={specs.yearBuilt || ''} />
+              </div>
+            </div>
+          </>
+        );
+      case 'fineart':
+        return (
+          <>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Artist / Creator Name</label>
+                <input type="text" className="form-input" placeholder="e.g. Vincent van Gogh" onChange={(e) => handleSpecChange('artist', e.target.value)} value={specs.artist || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Creation Year</label>
+                <input type="text" className="form-input" placeholder="e.g. 1889" onChange={(e) => handleSpecChange('creationYear', e.target.value)} value={specs.creationYear || ''} required />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Medium Used</label>
+                <input type="text" className="form-input" placeholder="e.g. Oil on Canvas, Marble Sculpture" onChange={(e) => handleSpecChange('medium', e.target.value)} value={specs.medium || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Dimensions (H x W x D)</label>
+                <input type="text" className="form-input" placeholder="e.g. 73.7 cm × 92.1 cm" onChange={(e) => handleSpecChange('dimensions', e.target.value)} value={specs.dimensions || ''} required />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Certificate of Authenticity (COA) ID</label>
+              <input type="text" className="form-input" placeholder="e.g. COA-ART-1102" onChange={(e) => handleSpecChange('coaId', e.target.value)} value={specs.coaId || ''} required />
+            </div>
+          </>
+        );
+      case 'digitalip':
+        return (
+          <>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">IP Classification</label>
+                <select className="form-input" onChange={(e) => handleSpecChange('ipType', e.target.value)} value={specs.ipType || 'Patent'}>
+                  <option value="Patent">Patent Deed</option>
+                  <option value="Trademark">Registered Trademark</option>
+                  <option value="Copyright">Copyright Registration</option>
+                  <option value="SourceCode">Source Code Proprietary License</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Official Registry ID</label>
+                <input type="text" className="form-input" placeholder="e.g. US-PAT-104928" onChange={(e) => handleSpecChange('registryId', e.target.value)} value={specs.registryId || ''} required />
+              </div>
+            </div>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Registration / Filing Date</label>
+                <input type="date" className="form-input" onChange={(e) => handleSpecChange('filingDate', e.target.value)} value={specs.filingDate || ''} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Registry Office / Jurisdiction</label>
+                <input type="text" className="form-input" placeholder="e.g. USPTO, EUIPO" onChange={(e) => handleSpecChange('jurisdiction', e.target.value)} value={specs.jurisdiction || ''} required />
+              </div>
+            </div>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
 
-        <button type="submit" className="btn" style={{ width: '100%' }} disabled={isMinting}>
-          {isMinting ? 'Processing...' : 'Register Asset'}
-        </button>
-        
-        {mintStatus && (
-          <div style={{ marginTop: '1rem', textAlign: 'center', color: mintStatus.includes('Error') ? '#f87171' : '#4ade80' }}>
-            {mintStatus}
+  return (
+    <div className="card wizard-card animate-fade-in" style={{ maxWidth: '750px', margin: '0 auto' }}>
+      {/* Wizard Header Progress Bar */}
+      <div className="wizard-progress-bar-container">
+        <div className="wizard-progress" style={{ width: `${(step / 4) * 100}%` }}></div>
+        <div className="wizard-steps-indicators">
+          {[1, 2, 3, 4].map(s => (
+            <div key={s} className={`wizard-step-node ${step >= s ? 'active' : ''} ${step === s ? 'current' : ''}`}>
+              {s}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Step 1: Choose Class */}
+      {step === 1 && (
+        <div>
+          <div className="wizard-section-header">
+            <h2>Select Verified Asset Classification</h2>
+            <p>Define the categorical framework of the asset to structure its on-chain specifications.</p>
           </div>
-        )}
-      </form>
+          
+          <div className="classes-grid">
+            {assetClasses.map(c => {
+              const Icon = c.icon;
+              return (
+                <div 
+                  key={c.id} 
+                  className={`class-select-card ${assetClass === c.id ? 'active' : ''}`}
+                  onClick={() => handleClassSelect(c.id)}
+                  style={{ '--hover-color': c.color }}
+                >
+                  <div className="class-icon-wrapper" style={{ backgroundColor: `${c.color}20`, color: c.color }}>
+                    <Icon size={28} />
+                  </div>
+                  <h3>{c.title}</h3>
+                  <p>{c.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Step 2: Form Input */}
+      {step === 2 && (
+        <form onSubmit={(e) => { e.preventDefault(); setStep(3); }}>
+          <div className="wizard-section-header">
+            <button type="button" className="btn-back" onClick={() => setStep(1)}><ArrowLeft size={16} /> Classification</button>
+            <h2>Asset Profile & Technical Specs</h2>
+            <p>Provide verified details about this asset. This information will be saved immutably on IPFS.</p>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Asset Public Title</label>
+            <input 
+              type="text" 
+              className="form-input" 
+              placeholder="e.g. Patek Philippe Aquanaut #5167A" 
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+              required 
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Ownership Summary / Context</label>
+            <textarea 
+              className="form-input" 
+              placeholder="Provide a comprehensive narrative or proven description of authenticity..." 
+              value={description} 
+              onChange={(e) => setDescription(e.target.value)} 
+              rows="3"
+              required 
+            />
+          </div>
+
+          <div className="specs-fields-box">
+            <h4 className="specs-subheading">{assetClasses.find(c => c.id === assetClass)?.title} Specifics</h4>
+            {renderSpecFields()}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '2rem' }}>
+            <button type="submit" className="btn">
+              Next Step: Upload Media <ArrowRight size={18} />
+            </button>
+          </div>
+        </form>
+      )}
+
+      {/* Step 3: Image Upload */}
+      {step === 3 && (
+        <div>
+          <div className="wizard-section-header">
+            <button type="button" className="btn-back" onClick={() => setStep(2)}><ArrowLeft size={16} /> Specifications</button>
+            <h2>Cryptographic Proof & Image Verification</h2>
+            <p>Upload a high-fidelity image of the physical asset. Prospective buyers will match this photo against the item during transfer.</p>
+          </div>
+
+          <div className="upload-zone-box">
+            <input 
+              type="file" 
+              id="file-upload" 
+              className="file-hidden" 
+              accept="image/*"
+              onChange={handleImageFileChange}
+              disabled={isUploadingImage}
+            />
+            
+            {!imagePreview ? (
+              <label htmlFor="file-upload" className="upload-label-placeholder">
+                <FileUp size={48} className="upload-placeholder-icon" />
+                <span>Drag & drop or Click to choose asset photo</span>
+                <span className="file-hint">Accepts JPG, PNG, WEBP (Max 5MB)</span>
+              </label>
+            ) : (
+              <div className="upload-preview-container">
+                <img src={imagePreview} className="upload-preview-img" alt="Asset Preview" />
+                {isUploadingImage ? (
+                  <div className="upload-loading-overlay">
+                    <div className="spinner"></div>
+                    <p>Pinning to Decentralized IPFS Storage...</p>
+                  </div>
+                ) : (
+                  <div className="upload-success-overlay">
+                    <Sparkles size={24} color="#4ade80 animate-pulse" />
+                    <span>IPFS Anchored!</span>
+                    <label htmlFor="file-upload" className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem', padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>Change Photo</label>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {statusMessage && (
+            <div className={`status-bar-mint ${statusMessage.includes('Error') ? 'error' : 'success'}`}>
+              <AlertCircle size={16} /> {statusMessage}
+            </div>
+          )}
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '2rem' }}>
+            <button type="button" className="btn btn-secondary" onClick={() => setStep(2)}>Back</button>
+            <button 
+              type="button" 
+              className="btn" 
+              onClick={() => setStep(4)} 
+              disabled={isUploadingImage || !imageIpfsUrl}
+            >
+              Review Verification <ArrowRight size={18} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 4: Review and Submit */}
+      {step === 4 && (
+        <div>
+          <div className="wizard-section-header">
+            <button type="button" className="btn-back" onClick={() => setStep(3)}><ArrowLeft size={16} /> Media</button>
+            <h2>Cryptographic Ledger Summary</h2>
+            <p>Review the compiled structural parameters. Once minted, these attributes are unalterable.</p>
+          </div>
+
+          <div className="summary-layout">
+            <div className="summary-photo-card">
+              <img src={imagePreview} alt="Summary asset" className="summary-img" />
+              <div className="summary-class-pill" style={{ borderColor: assetClasses.find(c => c.id === assetClass)?.color }}>
+                {assetClasses.find(c => c.id === assetClass)?.title}
+              </div>
+            </div>
+
+            <div className="summary-specs-list">
+              <h3 style={{ borderBottom: '1px solid rgba(255,255,255,0.1)', paddingBottom: '0.5rem', marginBottom: '1rem' }}>{name}</h3>
+              <p style={{ fontSize: '0.875rem', color: '#94a3b8', marginBottom: '1.5rem' }}>{description}</p>
+              
+              <div className="summary-grid-fields">
+                {Object.entries(specs).map(([key, val]) => (
+                  <div key={key} className="summary-field-row">
+                    <span className="field-label">{key.replace(/([A-Z])/g, ' $1').toUpperCase()}:</span>
+                    <span className="field-value">{val}</span>
+                  </div>
+                ))}
+                <div className="summary-field-row">
+                  <span className="field-label">IPFS IMAGE HASH:</span>
+                  <span className="field-value code-font">{imageIpfsUrl.substring(0, 18)}...</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {statusMessage && (
+            <div className={`status-bar-mint ${statusMessage.includes('Error') ? 'error' : statusMessage.includes('Success') ? 'success' : 'processing'}`}>
+              <AlertCircle size={16} /> {statusMessage}
+            </div>
+          )}
+
+          <div className="mint-cta-block">
+            <button 
+              type="button" 
+              className="btn btn-secondary" 
+              onClick={() => setStep(3)}
+              disabled={isMinting}
+            >
+              Edit Details
+            </button>
+            
+            <button 
+              type="button" 
+              className="btn btn-mint-confirm animate-pulse" 
+              onClick={handleMint}
+              disabled={isMinting}
+            >
+              <ShieldCheck size={20} /> {isMinting ? 'Writing to Ledger...' : 'Confirm and Mint Asset'}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
