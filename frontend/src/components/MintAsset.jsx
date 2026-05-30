@@ -4,6 +4,10 @@ import { useAuth } from '../context/AuthContext';
 import { ethers } from 'ethers';
 import { Watch, Home, Palette, Award, FileUp, Sparkles, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck, FileText } from 'lucide-react';
 
+const getCleanJwt = () => {
+  return import.meta.env.VITE_PINATA_JWT?.replace(/^["']|["']$/g, '') || '';
+};
+
 const MintAsset = () => {
   const { account, contract } = useAuth();
   const [step, setStep] = useState(1); // 1: Class, 2: Specs, 3: Image, 4: Summary/Mint
@@ -91,7 +95,7 @@ const MintAsset = () => {
       const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_PINATA_JWT}`
+          'Authorization': `Bearer ${getCleanJwt()}`
         },
         body: formData
       });
@@ -144,7 +148,7 @@ const MintAsset = () => {
       const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${import.meta.env.VITE_PINATA_JWT}`
+          'Authorization': `Bearer ${getCleanJwt()}`
         },
         body: formData
       });
@@ -194,7 +198,7 @@ const MintAsset = () => {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${import.meta.env.VITE_PINATA_JWT}`
+          'Authorization': `Bearer ${getCleanJwt()}`
         },
         body: JSON.stringify({
           pinataContent: metadata,
