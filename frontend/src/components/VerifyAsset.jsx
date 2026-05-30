@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { QRCodeSVG } from 'qrcode.react';
-import { ShieldCheck, AlertCircle, ExternalLink, Calendar, User, FileText, CheckCircle2, History, ChevronRight, ShoppingCart } from 'lucide-react';
+import { ShieldCheck, AlertCircle, ExternalLink, Calendar, User, FileText, CheckCircle2, History, ChevronRight, ShoppingCart, Watch, Home, Palette, Award } from 'lucide-react';
 
 import contractAddress from '../contracts/contract-address.json';
 import AssetVerifierArtifact from '../contracts/AssetVerifier.json';
@@ -30,7 +30,7 @@ const VerifyAsset = () => {
         await provider.getBlockNumber();
       } catch (err) {
         console.log("Local node offline, connecting to Polygon Amoy RPC...");
-        provider = new ethers.JsonRpcProvider("https://rpc-amoy.polygon.technology");
+        provider = new ethers.JsonRpcProvider("https://polygon-amoy.drpc.org");
       }
 
       const contract = new ethers.Contract(
@@ -168,8 +168,45 @@ const VerifyAsset = () => {
         <div className="certificate-layout-grid">
           {/* Visual Showcase */}
           <div className="cert-visual-panel">
-            <div className="cert-img-frame">
-              <img src={getImageUrl(assetData.image)} alt={assetData.name} />
+            <div className="cert-img-frame" style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: '260px' }}>
+              {assetData.image && assetData.image !== 'ipfs://QmUNLLsP2GmCwFMzUbz4QUtC8m8HgaCbfM7Qf7k1a32qXG' ? (
+                <img src={getImageUrl(assetData.image)} alt={assetData.name} style={{ objectFit: 'contain', width: '100%', height: '100%' }} />
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  width: '100%',
+                  minHeight: '220px',
+                  background: 'rgba(30, 41, 59, 0.4)',
+                  borderRadius: '12px',
+                  padding: '2rem',
+                  color: '#94a3b8',
+                  boxShadow: 'inset 0 4px 30px rgba(0, 0, 0, 0.25)',
+                  textAlign: 'center'
+                }}>
+                  {(() => {
+                    let Icon = ShieldCheck;
+                    let color = '#3b82f6';
+                    switch (assetData.assetClass) {
+                      case 'luxury': Icon = Watch; color = '#f59e0b'; break;
+                      case 'realestate': Icon = Home; color = '#10b981'; break;
+                      case 'fineart': Icon = Palette; color = '#8b5cf6'; break;
+                      case 'digitalip': Icon = Award; color = '#3b82f6'; break;
+                    }
+                    return React.createElement(Icon, {
+                      size: 56,
+                      style: { color, marginBottom: '1rem', opacity: 0.8, filter: `drop-shadow(0 0 12px ${color}40)` }
+                    });
+                  })()}
+                  <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#f1f5f9', letterSpacing: '0.05em' }}>VERIFIED BLOCKCHAIN PROOF</span>
+                  <span style={{ fontSize: '0.725rem', textAlign: 'center', marginTop: '0.4rem', color: '#64748b', lineHeight: '1.4', maxWidth: '80%' }}>
+                    This asset utilizes an official registered PDF document as its primary cryptographic provenance proof.
+                  </span>
+                </div>
+              )}
               <div className={`cert-class-ribbon class-${assetData.assetClass}`}>
                 {getClassName(assetData.assetClass)}
               </div>
@@ -224,6 +261,53 @@ const VerifyAsset = () => {
                 </div>
               </div>
             </div>
+
+            {/* Category-Specific Official Document Proof */}
+            {assetData.documentProof && (
+              <div className="proof-document-box animate-fade-in" style={{
+                background: 'rgba(30, 41, 59, 0.4)',
+                border: '1px solid rgba(59, 130, 246, 0.2)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                marginTop: '1.25rem',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '1rem',
+                boxShadow: 'inset 0 1px 0 0 rgba(255, 255, 255, 0.05)'
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                  <FileText size={26} style={{ color: '#60a5fa' }} />
+                  <div style={{ textAlign: 'left' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#94a3b8', display: 'block', letterSpacing: '0.05em', fontWeight: 'bold' }}>VERIFIED REGISTRY PROOF</span>
+                    <span style={{ fontSize: '0.825rem', color: '#f8fafc', fontWeight: '600', wordBreak: 'break-all', display: 'block' }}>{assetData.documentName || 'Official Registry Document'}</span>
+                  </div>
+                </div>
+                <a 
+                  href={`https://gateway.pinata.cloud/ipfs/${assetData.documentProof.replace('ipfs://', '')}`} 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="btn btn-secondary btn-sm"
+                  style={{
+                    flexShrink: 0,
+                    padding: '0.35rem 0.7rem',
+                    fontSize: '0.7rem',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.25rem',
+                    borderRadius: '6px',
+                    background: 'rgba(59, 130, 246, 0.1)',
+                    border: '1px solid rgba(59, 130, 246, 0.25)',
+                    color: '#60a5fa',
+                    cursor: 'pointer',
+                    textDecoration: 'none',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  Download PDF <ExternalLink size={11} />
+                </a>
+              </div>
+            )}
           </div>
         </div>
 

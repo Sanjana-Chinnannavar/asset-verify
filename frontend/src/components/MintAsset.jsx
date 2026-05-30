@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { ethers } from 'ethers';
-import { Watch, Home, Palette, Award, FileUp, Sparkles, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Watch, Home, Palette, Award, FileUp, Sparkles, AlertCircle, ArrowLeft, ArrowRight, ShieldCheck, FileText } from 'lucide-react';
 
 const MintAsset = () => {
   const { account, contract } = useAuth();
@@ -19,7 +19,13 @@ const MintAsset = () => {
   const [imagePreview, setImagePreview] = useState('');
   const [imageIpfsUrl, setImageIpfsUrl] = useState('');
   
+  // Custom Document Proof states
+  const [docFile, setDocFile] = useState(null);
+  const [docName, setDocName] = useState('');
+  const [docIpfsUrl, setDocIpfsUrl] = useState('');
+  
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isUploadingDoc, setIsUploadingDoc] = useState(false);
   const [isMinting, setIsMinting] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
   
@@ -106,6 +112,59 @@ const MintAsset = () => {
     }
   };
 
+  const getDocProofLabel = () => {
+    switch (assetClass) {
+      case 'luxury':
+        return 'Authenticity Certificate (PDF/Invoice)';
+      case 'realestate':
+        return 'Government Registry Deed (PDF)';
+      case 'fineart':
+        return 'Certificate of Authenticity (COA) (PDF)';
+      case 'digitalip':
+        return 'Official Registry Deed / Patent Document (PDF)';
+      default:
+        return 'Official Authenticity Document (PDF)';
+    }
+  };
+
+  const handleDocFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setDocFile(file);
+    setDocName(file.name);
+    
+    try {
+      setIsUploadingDoc(true);
+      setStatusMessage(`Uploading ${getDocProofLabel()} to IPFS...`);
+      
+      const formData = new FormData();
+      formData.append('file', file);
+      
+      const res = await fetch('https://api.pinata.cloud/pinning/pinFileToIPFS', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${import.meta.env.VITE_PINATA_JWT}`
+        },
+        body: formData
+      });
+      
+      if (!res.ok) {
+        throw new Error('Failed to upload document file to Pinata IPFS');
+      }
+      
+      const resData = await res.json();
+      const ipfsUrl = `ipfs://${resData.IpfsHash}`;
+      setDocIpfsUrl(ipfsUrl);
+      setStatusMessage('Official registry document successfully anchored on decentralized IPFS!');
+    } catch (error) {
+      console.error(error);
+      setStatusMessage(`Error: ${error.message}`);
+    } finally {
+      setIsUploadingDoc(false);
+    }
+  };
+
   const handleMint = async (e) => {
     e.preventDefault();
     if (!account || !contract) {
@@ -124,6 +183,8 @@ const MintAsset = () => {
         assetClass,
         specifications: specs,
         image: imageIpfsUrl || 'ipfs://QmUNLLsP2GmCwFMzUbz4QUtC8m8HgaCbfM7Qf7k1a32qXG', // fallback image CID
+        documentProof: docIpfsUrl || '',
+        documentName: docName || '',
         timestamp: new Date().toISOString(),
         issuer: account
       };
@@ -400,52 +461,102 @@ const MintAsset = () => {
         </form>
       )}
 
-      {/* Step 3: Image Upload */}
+      {/* Step 3: Dual Media Upload (Showcase Photo + Official Document Proof) */}
       {step === 3 && (
         <div>
           <div className="wizard-section-header">
             <button type="button" className="btn-back" onClick={() => setStep(2)}><ArrowLeft size={16} /> Specifications</button>
-            <h2>Cryptographic Proof & Image Verification</h2>
-            <p>Upload a high-fidelity image of the physical asset. Prospective buyers will match this photo against the item during transfer.</p>
+            <h2>Cryptographic Proof & Document Verification</h2>
+            <p>For maximum authenticity, attach a high-fidelity visual showcase photo AND the official regulatory document proof (like a COA, land deed, or patent filing).</p>
           </div>
 
-          <div className="upload-zone-box">
-            <input 
-              type="file" 
-              id="file-upload" 
-              className="file-hidden" 
-              accept="image/*"
-              onChange={handleImageFileChange}
-              disabled={isUploadingImage}
-            />
-            
-            {!imagePreview ? (
-              <label htmlFor="file-upload" className="upload-label-placeholder">
-                <FileUp size={48} className="upload-placeholder-icon" />
-                <span>Drag & drop or Click to choose asset photo</span>
-                <span className="file-hint">Accepts JPG, PNG, WEBP (Max 5MB)</span>
-              </label>
-            ) : (
-              <div className="upload-preview-container">
-                <img src={imagePreview} className="upload-preview-img" alt="Asset Preview" />
-                {isUploadingImage ? (
-                  <div className="upload-loading-overlay">
-                    <div className="spinner"></div>
-                    <p>Pinning to Decentralized IPFS Storage...</p>
-                  </div>
+          <div className="upload-grid-container" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '2rem', marginTop: '1.5rem' }}>
+            {/* Column 1: Image Showcase */}
+            <div className="upload-column">
+              <h3 style={{ fontSize: '0.95rem', marginBottom: '0.75rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Sparkles size={16} color="#f59e0b" /> Visual Proof (Showcase Photo)
+              </h3>
+              <div className="upload-zone-box" style={{ height: '230px', position: 'relative' }}>
+                <input 
+                  type="file" 
+                  id="file-upload" 
+                  className="file-hidden" 
+                  accept="image/*"
+                  onChange={handleImageFileChange}
+                  disabled={isUploadingImage}
+                />
+                
+                {!imagePreview ? (
+                  <label htmlFor="file-upload" className="upload-label-placeholder" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
+                    <FileUp size={36} className="upload-placeholder-icon" style={{ margin: '0 auto 0.5rem auto' }} />
+                    <span style={{ fontSize: '0.85rem' }}>Choose asset photo</span>
+                    <span className="file-hint" style={{ fontSize: '0.7rem' }}>JPG, PNG, WEBP (Max 5MB)</span>
+                  </label>
                 ) : (
-                  <div className="upload-success-overlay">
-                    <Sparkles size={24} color="#4ade80 animate-pulse" />
-                    <span>IPFS Anchored!</span>
-                    <label htmlFor="file-upload" className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem', padding: '0.25rem 0.75rem', fontSize: '0.75rem' }}>Change Photo</label>
+                  <div className="upload-preview-container" style={{ height: '100%', position: 'relative' }}>
+                    <img src={imagePreview} className="upload-preview-img" alt="Asset Preview" style={{ maxHeight: '100%', objectFit: 'contain', width: '100%' }} />
+                    {isUploadingImage ? (
+                      <div className="upload-loading-overlay" style={{ background: 'rgba(15,23,42,0.85)' }}>
+                        <div className="spinner"></div>
+                        <p style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}>Pinning Image to IPFS...</p>
+                      </div>
+                    ) : (
+                      <div className="upload-success-overlay" style={{ background: 'rgba(15,23,42,0.8)' }}>
+                        <Sparkles size={20} color="#4ade80" />
+                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>IPFS Anchored!</span>
+                        <label htmlFor="file-upload" className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem', padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}>Change Photo</label>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
+            </div>
+
+            {/* Column 2: Document Proof */}
+            <div className="upload-column">
+              <h3 style={{ fontSize: '0.95rem', marginBottom: '0.75rem', color: '#e2e8f0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <FileText size={16} color="#3b82f6" /> {getDocProofLabel().split(' (')[0]}
+              </h3>
+              <div className="upload-zone-box" style={{ height: '230px', position: 'relative' }}>
+                <input 
+                  type="file" 
+                  id="doc-upload" 
+                  className="file-hidden" 
+                  accept="application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  onChange={handleDocFileChange}
+                  disabled={isUploadingDoc}
+                />
+                
+                {!docName ? (
+                  <label htmlFor="doc-upload" className="upload-label-placeholder" style={{ cursor: 'pointer', display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'center' }}>
+                    <FileText size={36} className="upload-placeholder-icon" style={{ color: '#64748b', margin: '0 auto 0.5rem auto' }} />
+                    <span style={{ fontSize: '0.85rem' }}>Upload Official PDF Proof</span>
+                    <span className="file-hint" style={{ fontSize: '0.7rem' }}>PDF, DOCX (Max 10MB)</span>
+                  </label>
+                ) : (
+                  <div className="upload-preview-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', textAlign: 'center', height: '100%' }}>
+                    <FileText size={42} style={{ color: '#3b82f6', marginBottom: '0.5rem' }} />
+                    <span style={{ fontSize: '0.8rem', color: '#f8fafc', wordBreak: 'break-all', fontWeight: 'bold', maxWidth: '90%', display: '-webkit-box', WebkitLineClamp: '2', WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{docName}</span>
+                    {isUploadingDoc ? (
+                      <div className="upload-loading-overlay" style={{ background: 'rgba(15,23,42,0.85)' }}>
+                        <div className="spinner"></div>
+                        <p style={{ fontSize: '0.75rem', marginTop: '0.5rem' }}>Pinning PDF to IPFS...</p>
+                      </div>
+                    ) : (
+                      <div className="upload-success-overlay" style={{ background: 'rgba(15,23,42,0.8)' }}>
+                        <Sparkles size={20} color="#4ade80" />
+                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>Document Pinned!</span>
+                        <label htmlFor="doc-upload" className="btn btn-secondary btn-sm" style={{ marginTop: '0.5rem', padding: '0.2rem 0.5rem', fontSize: '0.7rem' }}>Change File</label>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {statusMessage && (
-            <div className={`status-bar-mint ${statusMessage.includes('Error') ? 'error' : 'success'}`}>
+            <div className={`status-bar-mint ${statusMessage.includes('Error') ? 'error' : 'success'}`} style={{ marginTop: '1.5rem' }}>
               <AlertCircle size={16} /> {statusMessage}
             </div>
           )}
@@ -456,7 +567,7 @@ const MintAsset = () => {
               type="button" 
               className="btn" 
               onClick={() => setStep(4)} 
-              disabled={isUploadingImage || !imageIpfsUrl}
+              disabled={isUploadingImage || isUploadingDoc || (!imageIpfsUrl && !docIpfsUrl)}
             >
               Review Verification <ArrowRight size={18} />
             </button>
@@ -474,9 +585,35 @@ const MintAsset = () => {
           </div>
 
           <div className="summary-layout">
-            <div className="summary-photo-card">
-              <img src={imagePreview} alt="Summary asset" className="summary-img" />
-              <div className="summary-class-pill" style={{ borderColor: assetClasses.find(c => c.id === assetClass)?.color }}>
+            <div className="summary-photo-card" style={{ display: 'flex', flexDirection: 'column', height: '100%', justifyContent: 'space-between' }}>
+              {imagePreview ? (
+                <img src={imagePreview} alt="Summary asset" className="summary-img" />
+              ) : (
+                <div style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '100%',
+                  minHeight: '220px',
+                  background: 'rgba(30, 41, 59, 0.4)',
+                  border: `2px dashed ${assetClasses.find(c => c.id === assetClass)?.color}40`,
+                  borderRadius: '12px',
+                  padding: '1.5rem',
+                  color: '#94a3b8',
+                  boxShadow: 'inset 0 4px 30px rgba(0, 0, 0, 0.2)'
+                }}>
+                  {React.createElement(assetClasses.find(c => c.id === assetClass)?.icon || ShieldCheck, {
+                    size: 44,
+                    style: { color: assetClasses.find(c => c.id === assetClass)?.color, marginBottom: '0.75rem', opacity: 0.8 }
+                  })}
+                  <span style={{ fontSize: '0.825rem', fontWeight: 'bold', color: '#f1f5f9', letterSpacing: '0.05em' }}>REGISTRY RECORD ONLY</span>
+                  <span style={{ fontSize: '0.675rem', textAlign: 'center', marginTop: '0.35rem', color: '#64748b', lineHeight: '1.4' }}>
+                    No photo attached. Pinned official document will serve as primary custody proof.
+                  </span>
+                </div>
+              )}
+              <div className="summary-class-pill" style={{ borderColor: assetClasses.find(c => c.id === assetClass)?.color, marginTop: '1rem', width: 'fit-content' }}>
                 {assetClasses.find(c => c.id === assetClass)?.title}
               </div>
             </div>
@@ -492,10 +629,18 @@ const MintAsset = () => {
                     <span className="field-value">{val}</span>
                   </div>
                 ))}
-                <div className="summary-field-row">
-                  <span className="field-label">IPFS IMAGE HASH:</span>
-                  <span className="field-value code-font">{imageIpfsUrl.substring(0, 18)}...</span>
-                </div>
+                {imageIpfsUrl && (
+                  <div className="summary-field-row">
+                    <span className="field-label">IPFS IMAGE HASH:</span>
+                    <span className="field-value code-font">{imageIpfsUrl.substring(0, 18)}...</span>
+                  </div>
+                )}
+                {docIpfsUrl && (
+                  <div className="summary-field-row">
+                    <span className="field-label">VERIFIED DOC PROOF:</span>
+                    <span className="field-value code-font" style={{ color: '#3b82f6' }}>{docName}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
