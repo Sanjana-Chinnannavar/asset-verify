@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { QRCodeSVG } from 'qrcode.react';
 import { Link } from 'react-router-dom';
 import { ethers } from 'ethers';
-import { Tag, ShoppingCart, User, Shield, ShieldCheck, Briefcase, Activity, Plus, RefreshCw, XCircle, Search, HelpCircle, CheckCircle } from 'lucide-react';
+import { Tag, ShoppingCart, User, Shield, ShieldCheck, Briefcase, Activity, Plus, RefreshCw, XCircle, Search, HelpCircle, CheckCircle, Watch, Home, Palette, Award } from 'lucide-react';
 
 const Dashboard = () => {
   const { account, contract, role } = useAuth();
@@ -34,11 +34,13 @@ const Dashboard = () => {
       // Query token IDs sequentially until we hit a revert (end of supply)
       for (let tokenId = 0; tokenId < 100; tokenId++) {
         try {
-          const owner = await contract.ownerOf(tokenId);
-          const uri = await contract.tokenURI(tokenId);
+          // Execute all blockchain queries in parallel to drastically improve loading speeds
+          const [owner, uri, listing] = await Promise.all([
+            contract.ownerOf(tokenId),
+            contract.tokenURI(tokenId),
+            contract.listings(tokenId)
+          ]);
           
-          // Fetch listing details
-          const listing = await contract.listings(tokenId);
           const isForSale = listing.isForSale;
           const price = ethers.formatEther(listing.price);
           const seller = listing.seller;
@@ -97,7 +99,8 @@ const Dashboard = () => {
   };
 
   const getVerifyUrl = (tokenId) => {
-    return `https://unique-attack.surge.sh/verify/${tokenId}`;
+    const origin = import.meta.env.VITE_PUBLIC_URL || window.location.origin;
+    return `${origin}/verify/${tokenId}`;
   };
 
   // On-chain: List Asset for Sale
@@ -113,7 +116,30 @@ const Dashboard = () => {
       setActionStatus('Listing asset on-chain...');
       const priceWei = ethers.parseEther(priceText);
       
-      const tx = await contract.listAsset(tokenId, priceWei);
+      let activeContract = contract;
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          if (network.chainId !== 80002n) {
+            setActionStatus('Switching MetaMask to Polygon Amoy Testnet...');
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x13882' }],
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          const signer = await provider.getSigner();
+          activeContract = contract.connect(signer);
+        } catch (e) {
+          console.warn("Failed to switch network or connect signer:", e);
+        }
+      }
+      
+      const tx = await activeContract.listAsset(tokenId, priceWei, {
+        maxFeePerGas: ethers.parseUnits('30.01', 'gwei'),
+        maxPriorityFeePerGas: ethers.parseUnits('30', 'gwei')
+      });
       setActionStatus('Waiting for transaction approval...');
       await tx.wait();
       
@@ -135,7 +161,30 @@ const Dashboard = () => {
       setActionLoading(tokenId);
       setActionStatus('Canceling marketplace listing...');
       
-      const tx = await contract.cancelListing(tokenId);
+      let activeContract = contract;
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          if (network.chainId !== 80002n) {
+            setActionStatus('Switching MetaMask to Polygon Amoy Testnet...');
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x13882' }],
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          const signer = await provider.getSigner();
+          activeContract = contract.connect(signer);
+        } catch (e) {
+          console.warn("Failed to switch network or connect signer:", e);
+        }
+      }
+      
+      const tx = await activeContract.cancelListing(tokenId, {
+        maxFeePerGas: ethers.parseUnits('30.01', 'gwei'),
+        maxPriorityFeePerGas: ethers.parseUnits('30', 'gwei')
+      });
       setActionStatus('Confirming block transfer...');
       await tx.wait();
       
@@ -164,8 +213,30 @@ const Dashboard = () => {
       
       const priceWei = ethers.parseEther(asset.listing.price);
       
-      const tx = await contract.purchaseAsset(asset.tokenId, {
-        value: priceWei
+      let activeContract = contract;
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          if (network.chainId !== 80002n) {
+            setActionStatus('Switching MetaMask to Polygon Amoy Testnet...');
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x13882' }],
+            });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          const signer = await provider.getSigner();
+          activeContract = contract.connect(signer);
+        } catch (e) {
+          console.warn("Failed to switch network or connect signer:", e);
+        }
+      }
+      
+      const tx = await activeContract.purchaseAsset(asset.tokenId, {
+        value: priceWei,
+        maxFeePerGas: ethers.parseUnits('30.01', 'gwei'),
+        maxPriorityFeePerGas: ethers.parseUnits('30', 'gwei')
       });
       
       setActionStatus('Signing cryptographic transfer... Please wait...');
@@ -235,7 +306,12 @@ const Dashboard = () => {
         <div className="admin-actions-split">
           <div className="card admin-registry-list">
             <div className="section-header-row">
-              <h2>Global Asset Ledger</h2>
+              <div>
+                <h2>Global Asset Ledger</h2>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '0.25rem', fontFamily: 'monospace' }}>
+                  Connected Contract: <span style={{ color: '#60a5fa' }}>{contract ? (contract.target || contract.address) : 'Loading...'}</span>
+                </div>
+              </div>
               <button onClick={fetchAssets} className="btn btn-secondary btn-sm" title="Sync Ledger">
                 <RefreshCw size={16} /> Sync
               </button>
@@ -254,6 +330,7 @@ const Dashboard = () => {
                       <th>Asset Class</th>
                       <th>Asset Title</th>
                       <th>Ledger Owner</th>
+                      <th>Marketplace Action</th>
                       <th>Verification & QR</th>
                     </tr>
                   </thead>
@@ -268,6 +345,52 @@ const Dashboard = () => {
                         </td>
                         <td><strong>{asset.name}</strong></td>
                         <td className="monospace-text">{asset.owner.substring(0, 8)}...{asset.owner.substring(asset.owner.length - 6)}</td>
+                        
+                        {/* Direct Marketplace Action Column */}
+                        <td>
+                          {asset.owner.toLowerCase() === account.toLowerCase() ? (
+                            actionLoading === asset.tokenId ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                <div className="spinner mini-spinner"></div>
+                                <span>{actionStatus}</span>
+                              </div>
+                            ) : asset.listing.isForSale ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                                <span style={{ background: '#10b98120', color: '#10b981', padding: '0.25rem 0.5rem', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                  {asset.listing.price} POL
+                                </span>
+                                <button 
+                                  className="btn btn-logout btn-xs"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                                  onClick={() => handleCancelListing(asset.tokenId)}
+                                >
+                                  Cancel Sale
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <input 
+                                  type="number" 
+                                  step="0.0001"
+                                  placeholder="POL Price"
+                                  style={{ width: '80px', padding: '0.25rem 0.5rem', fontSize: '0.75rem', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '4px', color: '#f8fafc' }}
+                                  value={listingPrices[asset.tokenId] || ''}
+                                  onChange={(e) => setListingPrices(prev => ({ ...prev, [asset.tokenId]: e.target.value }))}
+                                />
+                                <button 
+                                  className="btn btn-primary btn-xs"
+                                  style={{ padding: '0.25rem 0.5rem', fontSize: '0.7rem', background: '#8b5cf6', border: 'none', borderRadius: '4px', color: '#fff', cursor: 'pointer' }}
+                                  onClick={() => handleListAsset(asset.tokenId)}
+                                >
+                                  List
+                                </button>
+                              </div>
+                            )
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: '0.75rem', fontStyle: 'italic' }}>External Owner</span>
+                          )}
+                        </td>
+
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
                             <Link to={`/verify/${asset.tokenId}`} className="btn-link">Verify Record</Link>
@@ -337,6 +460,14 @@ const Dashboard = () => {
   return (
     <>
       <div className="user-dashboard animate-fade-in">
+        <div style={{ background: '#1e293b80', border: '1px solid #334155', padding: '0.75rem 1rem', borderRadius: '8px', marginBottom: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontFamily: 'monospace' }}>
+            Connected Contract: <span style={{ color: '#60a5fa' }}>{contract ? (contract.target || contract.address) : 'Loading...'}</span>
+          </div>
+          <button onClick={fetchAssets} className="btn btn-secondary btn-xs" style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <RefreshCw size={12} /> Sync Ledger
+          </button>
+        </div>
       {/* Search and Filters */}
       <div className="card search-filter-card">
         <div className="search-bar-wrapper">
@@ -386,8 +517,25 @@ const Dashboard = () => {
             {myPortfolio.map((asset) => (
               <div key={asset.tokenId} className="card asset-card">
                 {/* Image Container */}
-                <div className="asset-card-image-box">
-                  <img src={getImageUrl(asset.image)} alt={asset.name} />
+                <div className="asset-card-image-box" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(30, 41, 59, 0.4)', minHeight: '180px', position: 'relative', overflow: 'hidden' }}>
+                  {asset.image && asset.image !== 'ipfs://QmUNLLsP2GmCwFMzUbz4QUtC8m8HgaCbfM7Qf7k1a32qXG' ? (
+                    <img src={getImageUrl(asset.image)} alt={asset.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', color: '#94a3b8', height: '100%', width: '100%', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%)' }}>
+                      {(() => {
+                        let Icon = ShieldCheck;
+                        let color = '#3b82f6';
+                        switch (asset.assetClass) {
+                          case 'luxury': Icon = Watch; color = '#f59e0b'; break;
+                          case 'realestate': Icon = Home; color = '#10b981'; break;
+                          case 'fineart': Icon = Palette; color = '#8b5cf6'; break;
+                          case 'digitalip': Icon = Award; color = '#3b82f6'; break;
+                        }
+                        return React.createElement(Icon, { size: 40, style: { color, marginBottom: '0.5rem', opacity: 0.8, filter: `drop-shadow(0 0 8px ${color}30)` } });
+                      })()}
+                      <span style={{ fontSize: '0.725rem', fontWeight: 'bold', color: '#f1f5f9', letterSpacing: '0.05em' }}>REGISTRY RECORD</span>
+                    </div>
+                  )}
                   <span className={`class-badge class-${asset.assetClass} card-floating-badge`}>
                     {asset.assetClass}
                   </span>
@@ -441,7 +589,7 @@ const Dashboard = () => {
                       <div className="sell-asset-form">
                         <input 
                           type="number" 
-                          step="0.01"
+                          step="0.0001"
                           placeholder="Price in POL"
                           className="form-input price-input-mini"
                           value={listingPrices[asset.tokenId] || ''}
@@ -473,8 +621,25 @@ const Dashboard = () => {
           <div className="dashboard-grid animate-fade-in">
             {marketplaceListings.map((asset) => (
               <div key={asset.tokenId} className="card asset-card marketplace-item">
-                <div className="asset-card-image-box">
-                  <img src={getImageUrl(asset.image)} alt={asset.name} />
+                <div className="asset-card-image-box" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(30, 41, 59, 0.4)', minHeight: '180px', position: 'relative', overflow: 'hidden' }}>
+                  {asset.image && asset.image !== 'ipfs://QmUNLLsP2GmCwFMzUbz4QUtC8m8HgaCbfM7Qf7k1a32qXG' ? (
+                    <img src={getImageUrl(asset.image)} alt={asset.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '1rem', color: '#94a3b8', height: '100%', width: '100%', background: 'linear-gradient(135deg, rgba(30, 41, 59, 0.6) 0%, rgba(15, 23, 42, 0.8) 100%)' }}>
+                      {(() => {
+                        let Icon = ShieldCheck;
+                        let color = '#3b82f6';
+                        switch (asset.assetClass) {
+                          case 'luxury': Icon = Watch; color = '#f59e0b'; break;
+                          case 'realestate': Icon = Home; color = '#10b981'; break;
+                          case 'fineart': Icon = Palette; color = '#8b5cf6'; break;
+                          case 'digitalip': Icon = Award; color = '#3b82f6'; break;
+                        }
+                        return React.createElement(Icon, { size: 40, style: { color, marginBottom: '0.5rem', opacity: 0.8, filter: `drop-shadow(0 0 8px ${color}30)` } });
+                      })()}
+                      <span style={{ fontSize: '0.725rem', fontWeight: 'bold', color: '#f1f5f9', letterSpacing: '0.05em' }}>REGISTRY RECORD</span>
+                    </div>
+                  )}
                   <span className={`class-badge class-${asset.assetClass} card-floating-badge`}>
                     {asset.assetClass}
                   </span>

@@ -314,7 +314,7 @@ const VerifyAsset = () => {
         {/* Cryptographic Verification Pass QR (Centered in the Middle) */}
         <div className="cert-qr-pass-centered animate-fade-in">
           <div className="cert-qr-pass-card">
-            <QRCodeSVG value={`https://unique-attack.surge.sh/verify/${tokenId}`} size={130} className="cert-qr-svg" />
+            <QRCodeSVG value={`${import.meta.env.VITE_PUBLIC_URL || window.location.origin}/verify/${tokenId}`} size={130} className="cert-qr-svg" />
             <div className="pass-text">
               <h4>PHYSICAL AUTHENTICITY SCAN PASS</h4>
               <p>Print and attach this cryptographic provenance pass directly to your physical item. Scanning this code on any smartphone instantly verifies its origin, full lifecycle audits, and blockchain custody on Polygon.</p>

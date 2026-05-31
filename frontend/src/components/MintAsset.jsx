@@ -217,8 +217,35 @@ const MintAsset = () => {
 
       setStatusMessage('Confirming smart contract registration on Polygon Ledger...');
       
-      // Call registerAsset (Restricted to contract owner/admin)
-      const tx = await contract.registerAsset(account, tokenURI);
+      let activeContract = contract;
+      if (window.ethereum) {
+        try {
+          const provider = new ethers.BrowserProvider(window.ethereum);
+          const network = await provider.getNetwork();
+          
+          // Force network switch to Polygon Amoy (chainId 80002) if not already on it
+          if (network.chainId !== 80002n) {
+            setStatusMessage('Switching MetaMask to Polygon Amoy Testnet...');
+            await window.ethereum.request({
+              method: 'wallet_switchEthereumChain',
+              params: [{ chainId: '0x13882' }],
+            });
+            // Brief pause to allow MetaMask to process the network switch
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+          
+          const signer = await provider.getSigner();
+          activeContract = contract.connect(signer);
+        } catch (e) {
+          console.warn("Failed to switch network or connect signer:", e);
+        }
+      }
+
+      // Let MetaMask dynamically estimate the perfect gasLimit at runtime to prevent Out-of-Gas reverts!
+      const tx = await activeContract.registerAsset(account, tokenURI, {
+        maxFeePerGas: ethers.parseUnits('30.01', 'gwei'),
+        maxPriorityFeePerGas: ethers.parseUnits('30', 'gwei')
+      });
       
       setStatusMessage('Registering asset on-chain... Waiting for block confirmation...');
       await tx.wait();
@@ -379,7 +406,7 @@ const MintAsset = () => {
     <div className="card wizard-card animate-fade-in" style={{ maxWidth: '750px', margin: '0 auto' }}>
       {/* Wizard Header Progress Bar */}
       <div className="wizard-progress-bar-container">
-        <div className="wizard-progress" style={{ width: `${(step / 4) * 100}%` }}></div>
+        <div className="wizard-progress" style={{ width: `${((step - 1) / 3) * 100}%` }}></div>
         <div className="wizard-steps-indicators">
           {[1, 2, 3, 4].map(s => (
             <div key={s} className={`wizard-step-node ${step >= s ? 'active' : ''} ${step === s ? 'current' : ''}`}>

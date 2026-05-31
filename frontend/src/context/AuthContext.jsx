@@ -8,8 +8,8 @@ const AuthContext = createContext();
 // Pre-configured developer credentials
 const ADMIN_EMAIL = 'admin@assetverify.io';
 const ADMIN_PASS = 'admin123';
-// Default Hardhat local network deployer key mapping (Account #0)
-const ADMIN_MOCK_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
+// Live production admin wallet address
+const ADMIN_MOCK_ADDRESS = '0x26dc6B6C31E85F82eAD03d1a6d44eB3A31c18A8c';
 
 const USER_EMAIL = 'buyer@assetverify.io';
 const USER_PASS = 'buyer123';
@@ -55,7 +55,28 @@ export const AuthProvider = ({ children }) => {
         setLoading(false);
       }
     };
-    initAuth();
+    // Listen to network and account changes dynamically
+    if (window.ethereum) {
+      const handleChainChanged = () => window.location.reload();
+      const handleAccountsChanged = () => {
+        localStorage.removeItem('auth_user'); // Clear cached auth to force fresh detection
+        window.location.reload();
+      };
+      
+      window.ethereum.on('chainChanged', handleChainChanged);
+      window.ethereum.on('accountsChanged', handleAccountsChanged);
+      
+      initAuth();
+      
+      return () => {
+        if (window.ethereum.removeListener) {
+          window.ethereum.removeListener('chainChanged', handleChainChanged);
+          window.ethereum.removeListener('accountsChanged', handleAccountsChanged);
+        }
+      };
+    } else {
+      initAuth();
+    }
   }, []);
 
   // Update smart contract instance when account changes
@@ -65,8 +86,44 @@ export const AuthProvider = ({ children }) => {
     }
   }, [account]);
 
+  const switchNetwork = async () => {
+    if (!window.ethereum) return;
+    try {
+      await window.ethereum.request({
+        method: 'wallet_switchEthereumChain',
+        params: [{ chainId: '0x13882' }], // 80002 (Polygon Amoy Testnet)
+      });
+    } catch (switchError) {
+      if (switchError.code === 4902) {
+        try {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [
+              {
+                chainId: '0x13882',
+                chainName: 'Polygon Amoy Testnet',
+                nativeCurrency: {
+                  name: 'POL',
+                  symbol: 'POL',
+                  decimals: 18,
+                },
+                rpcUrls: ['https://polygon-amoy.drpc.org'],
+                blockExplorerUrls: ['https://amoy.polygonscan.com'],
+              },
+            ],
+          });
+        } catch (addError) {
+          console.error("Failed to add Amoy network:", addError);
+        }
+      }
+    }
+  };
+
   const setupContract = async (activeAccount) => {
     try {
+      // Force switch MetaMask network to Polygon Amoy Testnet to prevent network desync reverts
+      await switchNetwork();
+      
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const verifierContract = new ethers.Contract(
@@ -78,9 +135,9 @@ export const AuthProvider = ({ children }) => {
       return verifierContract;
     } catch (e) {
       console.error("Failed to setup contract inside auth:", e);
-      // Read-only fallback provider
+      // Read-only fallback provider pointing to Polygon Amoy Testnet
       try {
-        const provider = new ethers.JsonRpcProvider("http://127.0.0.1:8545");
+        const provider = new ethers.JsonRpcProvider("https://polygon-amoy.drpc.org");
         const verifierContract = new ethers.Contract(
           contractAddress.AssetVerifier,
           AssetVerifierArtifact.abi,
@@ -105,7 +162,7 @@ export const AuthProvider = ({ children }) => {
           console.warn("Could not read contract owner, using default mock:", e);
         }
 
-        const calculatedRole = address.toLowerCase() === contractOwner.toLowerCase() ? 'admin' : 'user';
+        const calculatedRole = (address.toLowerCase() === contractOwner.toLowerCase() || address.toLowerCase() === '0x26dc6b6c31e85f82ead03d1a6d44eb3a31c18a8c') ? 'admin' : 'user';
         const userData = {
           email: calculatedRole === 'admin' ? ADMIN_EMAIL : 'metamask.user@assetverify.io',
           role: calculatedRole,
@@ -126,15 +183,29 @@ export const AuthProvider = ({ children }) => {
     setLoading(true);
     try {
       if (email.toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASS) {
+        let activeAddress = ADMIN_MOCK_ADDRESS;
+        
+        // If MetaMask is installed and connected, use the real address dynamically instead of the mock!
+        if (window.ethereum) {
+          try {
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            if (accounts.length > 0) {
+              activeAddress = accounts[0];
+            }
+          } catch (e) {
+            console.warn("Could not read MetaMask account, using mock:", e);
+          }
+        }
+
         const userData = {
           email: ADMIN_EMAIL,
           role: 'admin',
-          address: ADMIN_MOCK_ADDRESS,
+          address: activeAddress,
           isMetaMask: false
         };
         setUser(userData);
         setRole('admin');
-        setAccount(ADMIN_MOCK_ADDRESS);
+        setAccount(activeAddress);
         localStorage.setItem('auth_user', JSON.stringify(userData));
         return { success: true };
       } else if (email.toLowerCase() === USER_EMAIL && password === USER_PASS) {

@@ -6,6 +6,7 @@ import Dashboard from './components/Dashboard';
 import MintAsset from './components/MintAsset';
 import VerifyAsset from './components/VerifyAsset';
 import LoginPortal from './components/LoginPortal';
+import VerifySearch from './components/VerifySearch';
 
 function AppContent() {
   const { user, role, account, logout, loading } = useAuth();
@@ -41,6 +42,9 @@ function AppContent() {
             <Link to="/" className="nav-item">
               <LayoutDashboard size={18} /> Dashboard
             </Link>
+            <Link to="/verify-search" className="nav-item">
+              <ShieldCheck size={18} /> Verify Asset
+            </Link>
             {role === 'admin' && (
               <Link to="/mint" className="nav-item">
                 <FilePlus size={18} /> Register Asset
@@ -73,6 +77,7 @@ function AppContent() {
           path="/mint" 
           element={role === 'admin' ? <MintAsset /> : <Navigate to="/" replace />} 
         />
+        <Route path="/verify-search" element={<VerifySearch />} />
         <Route path="/verify/:tokenId" element={<VerifyAsset />} />
       </Routes>
     </div>
