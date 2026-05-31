@@ -185,15 +185,15 @@ export const AuthProvider = ({ children }) => {
       if (email.toLowerCase() === ADMIN_EMAIL && password === ADMIN_PASS) {
         let activeAddress = ADMIN_MOCK_ADDRESS;
         
-        // If MetaMask is installed and connected, use the real address dynamically instead of the mock!
+        // Actively request MetaMask account access to bind real signer address
         if (window.ethereum) {
           try {
-            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
             if (accounts.length > 0) {
               activeAddress = accounts[0];
             }
           } catch (e) {
-            console.warn("Could not read MetaMask account, using mock:", e);
+            console.warn("Could not connect MetaMask account, using mock:", e);
           }
         }
 
@@ -209,15 +209,29 @@ export const AuthProvider = ({ children }) => {
         localStorage.setItem('auth_user', JSON.stringify(userData));
         return { success: true };
       } else if (email.toLowerCase() === USER_EMAIL && password === USER_PASS) {
+        let activeAddress = USER_MOCK_ADDRESS;
+        
+        // Actively request MetaMask account access to bind real signer address
+        if (window.ethereum) {
+          try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            if (accounts.length > 0) {
+              activeAddress = accounts[0];
+            }
+          } catch (e) {
+            console.warn("Could not connect MetaMask account, using mock:", e);
+          }
+        }
+
         const userData = {
           email: USER_EMAIL,
           role: 'user',
-          address: USER_MOCK_ADDRESS,
+          address: activeAddress,
           isMetaMask: false
         };
         setUser(userData);
         setRole('user');
-        setAccount(USER_MOCK_ADDRESS);
+        setAccount(activeAddress);
         localStorage.setItem('auth_user', JSON.stringify(userData));
         return { success: true };
       }
