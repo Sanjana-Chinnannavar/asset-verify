@@ -31,26 +31,7 @@ const LoginPortal = () => {
     }
   };
 
-  const triggerQuickDemo = async (roleType) => {
-    setError('');
-    setSubmitting(true);
-    let demoEmail = '';
-    let demoPass = '';
-    if (roleType === 'admin') {
-      demoEmail = 'admin@assetverify.io';
-      demoPass = 'admin123';
-    } else {
-      demoEmail = 'buyer@assetverify.io';
-      demoPass = 'buyer123';
-    }
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    const result = await loginWithCredentials(demoEmail, demoPass);
-    if (!result.success) {
-      setError(result.error);
-      setSubmitting(false);
-    }
-  };
+
 
   return (
     <div className="login-wrapper">
@@ -123,28 +104,6 @@ const LoginPortal = () => {
               <button type="submit" className="btn btn-primary login-submit" disabled={submitting || loading}>
                 {submitting ? 'Authenticating...' : 'Sign In'} <ArrowRight size={18} />
               </button>
-
-              <div className="demo-bypass-section">
-                <p className="demo-title">Quick Demo Login Bypass</p>
-                <div className="demo-btn-grid">
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary demo-btn admin-demo"
-                    onClick={() => triggerQuickDemo('admin')}
-                    disabled={submitting}
-                  >
-                    <UserCheck size={16} /> Admin View
-                  </button>
-                  <button 
-                    type="button" 
-                    className="btn btn-secondary demo-btn user-demo"
-                    onClick={() => triggerQuickDemo('user')}
-                    disabled={submitting}
-                  >
-                    <UserCheck size={16} /> Buyer View
-                  </button>
-                </div>
-              </div>
             </form>
           ) : (
             <div className="wallet-login-container">
